@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
@@ -42,6 +43,16 @@ export function createApp(): express.Express {
 
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
+
+  // Request tracing with correlation IDs (#128)
+  app.use((req, res, next) => {
+    const reqId = (req.headers['x-request-id'] as string) || randomUUID();
+    req.headers['x-request-id'] = reqId;
+    res.setHeader('X-Request-ID', reqId);
+    (req as any).id = reqId;
+    next();
+  });
+
   app.use(helmet());
   app.use(
     cors({
@@ -116,6 +127,14 @@ export function createApp(): express.Express {
       res.send(await renderMetrics());
     }),
   );
+
+  // Version unversioned /api/* routes as alias to /api/v1/* (#129)
+  app.use('/api', (req, res, next) => {
+    if (!req.url.startsWith('/v1')) {
+      req.url = `/v1${req.url}`;
+    }
+    next();
+  });
 
   app.use('/api/v1', apiVersion('1'));
   app.use('/api/v1/auth', authRoutes);
