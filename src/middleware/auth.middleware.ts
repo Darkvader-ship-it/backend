@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { config } from '@/config/config';
 import { AppError } from '@/middleware/error.middleware';
-import type { Role } from '@/models/user.model';
+import { UserModel, type Role } from '@/models/user.model';
 
 export interface AuthPayload {
   sub: string;
@@ -39,7 +39,13 @@ export function authenticate(req: Request, _res: Response, next: NextFunction): 
     return next(new AppError('Authentication required', 401));
   }
   try {
-    req.user = verifyToken(header.slice(7));
+    const payload = verifyToken(header.slice(7));
+    // Verify latest role from db so role changes take effect immediately in existing sessions (#120)
+    const user = UserModel.findById(payload.sub);
+    if (!user || !user.active) {
+      return next(new AppError('User not found or inactive', 401));
+    }
+    req.user = { sub: user.id, email: user.email, role: user.role };
     next();
   } catch {
     next(new AppError('Invalid or expired token', 401));

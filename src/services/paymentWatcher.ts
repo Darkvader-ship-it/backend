@@ -27,13 +27,24 @@ function writeCursor(cursor: string): void {
 }
 
 /** One polling pass. Exported for tests and for manual triggering. */
-export async function pollOnce(account: string): Promise<number> {
+export async function pollOnce(account: string, retries = 3): Promise<number> {
   let cursor = readCursor();
   if (!cursor) {
     cursor = await horizon.latestCursor(account);
     writeCursor(cursor);
   }
-  const page = await horizon.fetchPaymentsSince(account, cursor);
+  let page;
+  let attempt = 0;
+  while (true) {
+    try {
+      page = await horizon.fetchPaymentsSince(account, cursor);
+      break;
+    } catch (err) {
+      attempt++;
+      if (attempt >= retries) throw err;
+      await new Promise((r) => setTimeout(r, 500 * attempt));
+    }
+  }
   let settled = 0;
   for (const payment of page.payments) {
     if (await handleIncomingPayment(payment)) settled++;
@@ -52,13 +63,25 @@ export function startPaymentWatcher(): void {
     return;
   }
   let running = false;
+  let consecutiveErrors = 0;
+  const MAX_CONSECUTIVE_ERRORS = 5;
+
   const tick = async () => {
     if (running) return;
     running = true;
     try {
       await pollOnce(account);
+      consecutiveErrors = 0;
     } catch (err) {
-      logger.warn(`Payment watcher poll failed: ${(err as Error).message}`);
+      consecutiveErrors++;
+      logger.warn(
+        `Payment watcher poll failed (${consecutiveErrors}/${MAX_CONSECUTIVE_ERRORS}): ${(err as Error).message}`,
+      );
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        logger.error(
+          `Payment watcher exceeded max consecutive errors (${MAX_CONSECUTIVE_ERRORS}). Continuing retry on next cycle.`,
+        );
+      }
     } finally {
       running = false;
     }
