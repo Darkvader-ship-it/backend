@@ -178,7 +178,31 @@ CREATE TABLE IF NOT EXISTS disputes (
 );
 CREATE INDEX IF NOT EXISTS idx_disputes_tx ON disputes(transaction_id);
 CREATE INDEX IF NOT EXISTS idx_disputes_status ON disputes(status, created_at);
+
+-- Sessions table with indexed expires_at for efficient cleanup (#126).
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  token TEXT NOT NULL,
+  expires_at TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
 `;
+
+let sessionCleanupTimer: NodeJS.Timeout | null = null;
+
+export function startSessionCleanup(): void {
+  // Clean up expired sessions every 15 minutes (#126)
+  sessionCleanupTimer = setInterval(() => {
+    try {
+      getDb().prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
+    } catch (err) {
+      logger.error('Session cleanup failed', err);
+    }
+  }, 15 * 60 * 1000);
+  sessionCleanupTimer.unref();
+}
 
 export async function connectDatabase(path: string = config.database.path): Promise<DatabaseSync> {
   if (db) return db;

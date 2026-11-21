@@ -1,35 +1,64 @@
 import { config } from '@/config/config';
 import * as horizon from '@/services/horizon';
 import { isDatabaseHealthy } from '@/utils/database';
+import { getRedis } from '@/utils/redis';
 import { logger } from '@/utils/logger';
 
 export type DependencyStatus = 'up' | 'down' | 'timeout';
 
+export interface DependencyMetric {
+  status: DependencyStatus;
+  responseTimeMs: number;
+}
+
 export interface HealthReport {
   healthy: boolean;
   checks: {
-    database: DependencyStatus;
-    horizon: DependencyStatus;
+    database: DependencyMetric;
+    redis: DependencyMetric;
+    horizon: DependencyMetric;
   };
 }
 
 /**
  * Probes every dependency the API needs. Each probe is bounded by
  * `timeoutMs`, so the endpoint answers quickly even when Horizon hangs.
- * Failure details go to the log; the report carries only status words.
+ * Failure details go to the log; the report carries status and response time metrics.
  */
 export async function checkHealth(timeoutMs = config.health.timeoutMs): Promise<HealthReport> {
-  // SQLite runs in-process and answers SELECT 1 synchronously, so the database
-  // probe needs no timer. A wedged disk would block the event loop, which the
-  // load balancer would see as a missed response anyway.
-  const database: DependencyStatus = isDatabaseHealthy() ? 'up' : 'down';
-  if (database === 'down') logger.warn('Health: database probe failed');
+  const t0Db = Date.now();
+  const dbOk = isDatabaseHealthy();
+  const dbMs = Date.now() - t0Db;
+  const database: DependencyMetric = {
+    status: dbOk ? 'up' : 'down',
+    responseTimeMs: dbMs,
+  };
+  if (!dbOk) logger.warn('Health: database probe failed');
 
+  const t0Redis = Date.now();
+  let redisStatus: DependencyStatus = 'up';
+  try {
+    await getRedis().get('health:ping');
+  } catch {
+    redisStatus = 'down';
+  }
+  const redisMs = Date.now() - t0Redis;
+  const redis: DependencyMetric = {
+    status: redisStatus,
+    responseTimeMs: redisMs,
+  };
+
+  const t0Horizon = Date.now();
   const horizonStatus = await probeHorizonStatus(timeoutMs);
+  const horizonMs = Date.now() - t0Horizon;
+  const horizonMetric: DependencyMetric = {
+    status: horizonStatus,
+    responseTimeMs: horizonMs,
+  };
 
   return {
-    healthy: database === 'up' && horizonStatus === 'up',
-    checks: { database, horizon: horizonStatus },
+    healthy: database.status === 'up' && horizonStatus === 'up' && redis.status === 'up',
+    checks: { database, redis, horizon: horizonMetric },
   };
 }
 

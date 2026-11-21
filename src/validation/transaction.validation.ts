@@ -6,7 +6,7 @@ export const createSaleSchema = Joi.object({
     .items(
       Joi.object({
         productId: Joi.string().uuid().required(),
-        quantity: Joi.number().integer().min(1).max(10_000).required(),
+        quantity: Joi.number().integer().positive().min(1).max(10_000).required(),
       }),
     )
     .min(1)
