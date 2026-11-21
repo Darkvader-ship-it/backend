@@ -41,19 +41,12 @@ const shutdown = createShutdown({
   stopBackground: () => {
     stopPaymentWatcher();
     stopBackupSchedule();
+    stopSettlementSchedule();
   },
   flushJobs: (timeoutMs) => flushQueues(timeoutMs),
   release: async () => {
     await closeRealtime();
     closeQueues();
-async function shutdown(signal: string): Promise<void> {
-  logger.info(`${signal} received, shutting down`);
-  stopPaymentWatcher();
-  stopBackupSchedule();
-  stopSettlementSchedule();
-  closeQueues();
-  await closeRealtime();
-  server.close(() => {
     closeDatabase();
   },
   exit: (code) => process.exit(code),

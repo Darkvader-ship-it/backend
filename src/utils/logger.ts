@@ -1,6 +1,14 @@
 import winston from 'winston';
 import { config } from '@/config/config';
 
+const levels = {
+  error: 0,
+  warn: 1,
+  info: 2,
+  http: 3,
+  debug: 4,
+};
+
 const devFormat = winston.format.combine(
   winston.format.colorize(),
   winston.format.timestamp({ format: 'HH:mm:ss' }),
@@ -17,7 +25,8 @@ const prodFormat = winston.format.combine(
 );
 
 export const logger = winston.createLogger({
-  level: config.logLevel,
+  levels,
+  level: config.isProd ? 'info' : (config.logLevel || 'debug'),
   format: config.isProd ? prodFormat : devFormat,
   transports: [new winston.transports.Console({ silent: config.isTest })],
 });
