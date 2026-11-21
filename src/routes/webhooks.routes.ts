@@ -16,6 +16,32 @@ router.use(authenticate, authorize('admin', 'manager'));
 
 export type WebhookDeliveryStatus = 'pending' | 'success' | 'failed';
 
+export const WEBHOOK_RETRY_INTERVALS = [60_000, 300_000, 1_800_000]; // 1m, 5m, 30m (#122)
+
+export async function dispatchWebhookWithRetry(
+  url: string,
+  event: string,
+  payload: unknown,
+  attempt = 1,
+): Promise<void> {
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event, payload }),
+    });
+    if (!res.ok && attempt <= 3) {
+      const delay = WEBHOOK_RETRY_INTERVALS[attempt - 1] ?? 60_000;
+      setTimeout(() => void dispatchWebhookWithRetry(url, event, payload, attempt + 1), delay).unref();
+    }
+  } catch {
+    if (attempt <= 3) {
+      const delay = WEBHOOK_RETRY_INTERVALS[attempt - 1] ?? 60_000;
+      setTimeout(() => void dispatchWebhookWithRetry(url, event, payload, attempt + 1), delay).unref();
+    }
+  }
+}
+
 export interface WebhookDeliveryLog {
   id: string;
   event: string;

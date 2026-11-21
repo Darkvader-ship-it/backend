@@ -60,6 +60,27 @@ export const queueDeadLetters = new Gauge({
   },
 });
 
+// Key business and technical indicators (#131)
+export const paymentFailures = new Counter({
+  name: 'payment_failures_total',
+  help: 'Total number of payment failures by payment method and failure reason',
+  labelNames: ['method', 'reason'] as const,
+  registers: [registry],
+});
+
+export const transactionsCreated = new Counter({
+  name: 'transactions_created_total',
+  help: 'Total transactions created',
+  labelNames: ['status'] as const,
+  registers: [registry],
+});
+
+export const transactionRate = new Gauge({
+  name: 'transaction_rate_per_minute',
+  help: 'Estimated transaction throughput per minute',
+  registers: [registry],
+});
+
 /** Route template for a finished request, or "unmatched" when no route handled it. */
 export function routeLabel(req: Request): string {
   const path = req.route?.path;
