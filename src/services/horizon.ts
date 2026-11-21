@@ -7,6 +7,14 @@ import { Horizon, NotFoundError } from '@stellar/stellar-sdk';
 import { config } from '@/config/config';
 import { getRedis } from '@/utils/redis';
 
+export const STELLAR_REQUEST_TIMEOUT_MS = 30_000;
+
+Horizon.AxiosClient.defaults.timeout = STELLAR_REQUEST_TIMEOUT_MS;
+Horizon.AxiosClient.interceptors.request.use((request) => {
+  request.timeout = STELLAR_REQUEST_TIMEOUT_MS;
+  return request;
+});
+
 /** TTL for cached account balance data (#154). Short so stale balances are
  *  not served for long; long enough to absorb repeated calls within one
  *  checkout flow without hitting the Horizon rate limit. */
