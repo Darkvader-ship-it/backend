@@ -3,7 +3,7 @@ import type { Request, Response } from 'express';
 import { AppError, conflict, notFound } from '@/middleware/error.middleware';
 import { signToken } from '@/middleware/auth.middleware';
 import { toPublicUser, UserModel, type Role, type User } from '@/models/user.model';
-import { sendSuccess } from '@/utils/helpers';
+import { paginatedResponse, parsePagination, sendSuccess } from '@/utils/helpers';
 import * as twoFactor from '@/controllers/twoFactor.controller';
 import { issueChallenge } from '@/controllers/twoFactor.controller';
 import { TwoFactorModel } from '@/models/twoFactor.model';
@@ -113,8 +113,11 @@ export async function createStaff(req: Request, res: Response): Promise<void> {
   sendSuccess(res, toPublicUser(user), 201);
 }
 
-export async function listStaff(_req: Request, res: Response): Promise<void> {
-  sendSuccess(res, UserModel.list());
+export async function listStaff(req: Request, res: Response): Promise<void> {
+  const pagination = parsePagination(req.query);
+  const items = UserModel.listPaged(pagination.offset, pagination.limit);
+  const total = UserModel.count();
+  paginatedResponse(res, items, total, pagination);
 }
 
 export async function updateStaffRole(req: Request, res: Response): Promise<void> {

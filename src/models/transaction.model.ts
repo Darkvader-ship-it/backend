@@ -72,8 +72,14 @@ export interface SaleInput {
   note?: string;
 }
 
+// Explicit column list — avoids pulling every column via t.* (#161).
+// The list mirrors exactly what toTransaction() reads; add new columns here
+// when the schema grows rather than reverting to t.*.
 const SELECT = `
-  SELECT t.*, u.name AS cashier_name, c.name AS customer_name,
+  SELECT t.id, t.reference, t.user_id, t.customer_id,
+    t.subtotal_cents, t.discount_cents, t.tax_cents, t.total_cents,
+    t.status, t.note, t.created_at, t.completed_at,
+    u.name AS cashier_name, c.name AS customer_name,
     (SELECT COALESCE(SUM(amount_cents), 0) FROM payments p
       WHERE p.transaction_id = t.id AND p.status = 'completed') AS paid_cents
   FROM transactions t

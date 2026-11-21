@@ -4,6 +4,8 @@ Base URL: `http://localhost:3000/api/v1`. Send JSON with
 `Content-Type: application/json`. Authenticated routes need
 `Authorization: Bearer <token>` from `/auth/login` or `/auth/register`.
 
+**Versioning.** See the [versioning policy](versioning.md) for breaking changes and deprecation.
+
 **Envelope.** Success responses look like `{ "success": true, "data": ... }`.
 Errors look like `{ "success": false, "error": "message", "details"?: [{ "field", "message" }] }`.
 Paginated lists add `"pagination": { "page", "limit", "total", "pages" }`
@@ -26,12 +28,60 @@ for each route; "public" means no token is needed.
 | 429 | Rate limited |
 | 503 | Stellar checkout not configured |
 
+## Rate limits
+
+Two limiters apply. A request must pass both.
+
+**General limit (every `/api` route).** Counted over a rolling 60-second
+window. Signed-in callers are counted per account, so many terminals behind
+one shop IP do not share a budget; requests without a valid bearer token are
+counted per IP.
+
+| Tier | Requests per minute | Counted per |
+|---|---|---|
+| anonymous (no or invalid token) | 120 | IP |
+| `cashier` | 600 | account |
+| `manager` | 900 | account |
+| `admin` | 1200 | account |
+
+`/health` is outside `/api` and is not rate limited.
+
+**Credential limit.** These routes also allow 20 requests per 15 minutes
+per IP, to slow down password and code guessing:
+
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /auth/2fa/verify`
+- `POST /auth/2fa/enable`
+- `POST /auth/2fa/disable`
+
+**Headers.** Responses carry the IETF draft-7 rate-limit headers; the legacy
+`X-RateLimit-*` headers are not sent.
+
+| Header | Example | Meaning |
+|---|---|---|
+| `RateLimit-Policy` | `600;w=60` | Limit and window (seconds) for your tier |
+| `RateLimit` | `limit=600, remaining=598, reset=42` | Budget, requests left, seconds until the window resets |
+| `Retry-After` | `42` | Only on a 429: seconds to wait before retrying |
+
+When a credential-limited route is called, the headers describe whichever
+limiter ran last, which is the credential limit.
+
+**429 body.** Uses the normal error envelope:
+`{ "success": false, "error": "Too many requests, please slow down" }` for the
+general limit, or `"Too many attempts, please try again later"` for the
+credential limit. Back off until `Retry-After` has passed rather than retrying
+immediately.
+
+Limits are raised to 10,000 per minute (general) and 1,000 per 15 minutes
+(credential) when `NODE_ENV=test`, so test suites are not throttled.
+
 ## Auth and staff
 
 | Method | Path | Role | Body / notes |
 |---|---|---|---|
 | POST | `/auth/register` | public | `{ name, email, password (8+) }`. The first user becomes `admin`; later users are `cashier`. Returns `{ user, token }`. |
-| POST | `/auth/login` | public | `{ email, password }`. Returns `{ user, token }`. Rate limited to 20 per 15 minutes per IP. |
+| POST | `/auth/login` | public | `{ email, password }`. Returns `{ user, token }`. Rate limited to 20 per 15 minutes per IP (see [Rate limits](#rate-limits)). |
 | GET | `/auth/me` | any | Current user |
 | PATCH | `/auth/me` | any | `{ name?, currentPassword?, newPassword? }`. A new password requires the current one. |
 | GET | `/auth/2fa` | any | `{ enabled, recoveryCodesLeft }` |
@@ -168,3 +218,13 @@ share one room.
 | `transaction:completed` | the completed sale |
 | `inventory:low` | `[{ id, name, sku, stock, threshold }]` |
 | `analytics:updated` | today's summary (same shape as `GET /analytics/summary`), sent when a sale completes |
+
+## Queues (admin)
+
+| Method | Path | Role | Notes |
+|---|---|---|---|
+| GET | `/queues/dead-letters` | admin | Optional `?queue=notifications\|receipts` |
+| POST | `/queues/dead-letters/:id/requeue` | admin | 404 if the id is unknown |
+
+Each entry: `{ id, queue, data, error, stack?, attempts, failedAt }`. The list is in-memory,
+newest first, capped at 100 per queue, and cleared on restart.

@@ -74,6 +74,13 @@ whole numbers, or the server refuses to start.
 
 `npm_package_version` is set by npm when you run a script. The app reads it to report its version (see `src/app.ts`). You do not set it yourself.
 
+## Webhooks
+
+| Variable | Default | Description |
+|---|---|---|
+| `WEBHOOK_SECRET` | empty | Shared secret for verifying inbound webhook signatures (HMAC-SHA256). Required once a route mounts `webhookReplayGuard`, which refuses to start with an empty secret. Use at least 32 random characters. Never commit it. See `docs/webhooks.md`. |
+| `WEBHOOK_TOLERANCE_SECONDS` | `300` | Accepted clock skew for the signed webhook timestamp, in seconds, in both directions. Signatures are also remembered for twice this long to reject replays. |
+
 ## Test runs
 
 `tests/setup.ts` sets the variables a test run needs, including an in-memory

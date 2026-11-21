@@ -9,3 +9,18 @@ process.env.STELLAR_ASSET_ISSUER = 'GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT
 process.env.STELLAR_ASSET_RATE = '1';
 process.env.STELLAR_WATCHER_ENABLED = 'false';
 process.env.TAX_RATE_BPS = '0';
+
+// Reset the database connection between every test suite so that state
+// accumulated in one suite (rows, schema mutations) cannot bleed into the
+// next.  Each test file gets a fresh in-memory SQLite database via
+// connectDatabase(), which re-runs all migrations from scratch (#196).
+import { connectDatabase, closeDatabase } from '@/utils/database';
+
+beforeEach(async () => {
+  closeDatabase();
+  await connectDatabase(':memory:');
+});
+
+afterEach(() => {
+  closeDatabase();
+});

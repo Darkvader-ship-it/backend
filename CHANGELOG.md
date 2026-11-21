@@ -6,6 +6,13 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+- Dead-letter queue inspection and requeue: failed jobs keep id, payload, error, stack and timestamp; admin endpoints `GET /api/v1/queues/dead-letters` and `POST /api/v1/queues/dead-letters/:id/requeue` (#211).
+- API versioning policy (`docs/versioning.md`), an `X-API-Version` header on `/api/v1` responses, and a 404 listing supported versions for unknown `/api/v<N>` paths (#212).
+- `webhookReplayGuard` middleware (signed timestamp window plus short-lived replay store) and `docs/webhooks.md` for future webhook routes (#209).
+- CI scans the built Docker image with Trivy and fails on fixable HIGH or
+  CRITICAL vulnerabilities.
+
 ## [0.2.0]
 
 The first version that boots, serves real data, and takes payments.

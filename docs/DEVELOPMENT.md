@@ -149,4 +149,5 @@ it must be at least 32 characters, or the server refuses to start.
 - [ENVIRONMENT.md](ENVIRONMENT.md): every environment variable, its default and its valid values
 - [api.md](api.md): endpoints and response shapes
 - [stellar-payments.md](stellar-payments.md): how Stellar checkout is verified
+- [GLOSSARY.md](GLOSSARY.md): Stellar and point-of-sale terms used in the code
 - [CONTRIBUTING.md](../CONTRIBUTING.md): branches, commits and pull requests

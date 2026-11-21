@@ -62,6 +62,13 @@ export const UserModel = {
     return rows.map((r) => toPublicUser(toUser(r)));
   },
 
+  listPaged(offset: number, limit: number): PublicUser[] {
+    const rows = getDb()
+      .prepare('SELECT * FROM users ORDER BY created_at LIMIT ? OFFSET ?')
+      .all(limit, offset) as unknown as UserRow[];
+    return rows.map((r) => toPublicUser(toUser(r)));
+  },
+
   count(): number {
     return (getDb().prepare('SELECT COUNT(*) AS n FROM users').get() as { n: number }).n;
   },

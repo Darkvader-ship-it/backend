@@ -54,6 +54,11 @@ export const config = {
     intervalHours: int('BACKUP_INTERVAL_HOURS', 0),
     keep: int('BACKUP_KEEP', 14),
   },
+  webhooks: {
+    // No default: an empty secret would leave webhook routes unauthenticated.
+    secret: str('WEBHOOK_SECRET', ''),
+    toleranceSeconds: int('WEBHOOK_TOLERANCE_SECONDS', 300),
+  },
   store: {
     name: str('STORE_NAME', 'StellarPOS Store'),
     currency: str('STORE_CURRENCY', 'USD').toUpperCase(),
