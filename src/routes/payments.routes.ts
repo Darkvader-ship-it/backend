@@ -15,6 +15,9 @@ import {
 const router = Router();
 router.use(authenticate);
 
+const idempotencyStore = new Map<string, { result: unknown; timestamp: number }>();
+const IDEMPOTENCY_TTL_MS = 24 * 60 * 60 * 1000;
+
 router.get(
   '/transaction/:transactionId',
   asyncHandler(async (req, res) => {
@@ -27,6 +30,14 @@ router.post(
   '/',
   validateBody(createPaymentSchema),
   asyncHandler(async (req, res) => {
+    const idempotencyKey = req.headers['idempotency-key'] as string | undefined;
+    if (idempotencyKey) {
+      const cached = idempotencyStore.get(idempotencyKey);
+      if (cached && Date.now() - cached.timestamp < IDEMPOTENCY_TTL_MS) {
+        return sendSuccess(res, cached.result, 200);
+      }
+    }
+
     const body = req.body as {
       transactionId: string;
       method: 'cash' | 'card' | 'stellar';
@@ -41,6 +52,10 @@ router.post(
             stellarTxHash: body.stellarTxHash!,
           })
         : checkout.recordOfflinePayment({ ...body, method: body.method });
+
+    if (idempotencyKey) {
+      idempotencyStore.set(idempotencyKey, { result, timestamp: Date.now() });
+    }
     sendSuccess(res, result, 201);
   }),
 );

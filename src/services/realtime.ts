@@ -55,7 +55,16 @@ export function attachRealtime(server: HttpServer): Server {
     const ttl = msUntilExpiry(socket.data.exp);
     const expiry = ttl === null ? null : setTimeout(() => socket.disconnect(true), ttl);
 
+    // Bind message / data handler once at connection time (#125)
+    const onData = (data: unknown) => {
+      logger.debug(`Received socket data from ${socket.data.user.email}: ${JSON.stringify(data)}`);
+    };
+    socket.on('data', onData);
+    socket.on('message', onData);
+
     socket.on('disconnect', () => {
+      socket.off('data', onData);
+      socket.off('message', onData);
       if (expiry) clearTimeout(expiry);
       connections.remove(userId, socket);
     });
