@@ -236,3 +236,45 @@ export function withTransaction<T>(fn: (db: DatabaseSync) => T): T {
     throw err;
   }
 }
+
+// Database query performance monitoring (#133)
+const queryLatencies: number[] = [];
+
+export function recordQueryDuration(sql: string, durationMs: number): void {
+  queryLatencies.push(durationMs);
+  if (queryLatencies.length > 1000) queryLatencies.shift();
+
+  if (durationMs > 100) {
+    logger.warn(`Slow database query detected (${durationMs}ms): ${sql.slice(0, 100)}`);
+  }
+
+  if (queryLatencies.length >= 20) {
+    const sorted = [...queryLatencies].sort((a, b) => a - b);
+    const p95 = sorted[Math.floor(sorted.length * 0.95)];
+    if (p95 > 500) {
+      logger.error(`Database P95 latency alert: ${p95}ms exceeds 500ms threshold`);
+    }
+  }
+}
+
+/**
+ * Migration helper ensuring any NOT NULL column additions provide a DEFAULT value (#123).
+ */
+export function addColumnWithDefault(
+  table: string,
+  column: string,
+  typeDef: string,
+  defaultValue?: string,
+): void {
+  const defaultClause = defaultValue !== undefined ? `DEFAULT ${defaultValue}` : "DEFAULT ''";
+  const def = typeDef.toUpperCase().includes('NOT NULL') && !typeDef.toUpperCase().includes('DEFAULT')
+    ? `${typeDef} ${defaultClause}`
+    : typeDef;
+  try {
+    getDb().exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
+  } catch (err: any) {
+    if (!err?.message?.includes('duplicate column name')) {
+      throw err;
+    }
+  }
+}
