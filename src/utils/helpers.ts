@@ -10,8 +10,29 @@ export const asyncHandler =
     fn(req, res, next).catch(next);
   };
 
+function formatDatesToIso(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return obj;
+  if (obj instanceof Date) return obj.toISOString();
+  if (Array.isArray(obj)) return obj.map(formatDatesToIso);
+  if (typeof obj === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (
+        (k.endsWith('At') || k.endsWith('Date') || k === 'created_at' || k === 'updated_at' || k === 'completed_at') &&
+        typeof v === 'number'
+      ) {
+        out[k] = new Date(v > 1_000_000_000_000 ? v : v * 1000).toISOString();
+      } else {
+        out[k] = formatDatesToIso(v);
+      }
+    }
+    return out;
+  }
+  return obj;
+}
+
 export function sendSuccess<T>(res: Response, data: T, statusCode = 200): Response {
-  return res.status(statusCode).json({ success: true, data });
+  return res.status(statusCode).json({ success: true, data: formatDatesToIso(data) });
 }
 
 export function sendError(res: Response, message: string, statusCode = 400): Response {

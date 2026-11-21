@@ -27,6 +27,7 @@ import storeRoutes from '@/routes/store.routes';
 import transactionRoutes from '@/routes/transactions.routes';
 import transactionStreamRoutes from '@/routes/transactionStream.routes';
 import userRoutes from '@/routes/users.routes';
+import docsRoutes from '@/routes/docs.routes';
 import { checkHealth } from '@/services/health.service';
 import { connections } from '@/services/realtime';
 import { asyncHandler, sendError } from '@/utils/helpers';
@@ -153,6 +154,7 @@ export function createApp(): express.Express {
   app.use('/api/v1/transactions', transactionStreamRoutes);
   app.use('/api/v1/merchant', merchantRoutes);
   app.use('/api/v1/queues', queueRoutes);
+  app.use('/api/docs', docsRoutes);
   app.use(unsupportedApiVersion(['1']));
 
   app.use(notFoundHandler);
