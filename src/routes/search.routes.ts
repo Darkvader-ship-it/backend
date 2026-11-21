@@ -37,7 +37,7 @@ router.get(
     if (!types.length) throw badRequest(`types must be any of ${KINDS.join(', ')}`);
     const limit = boundedInt(req.query.limit, 20, 1, 50);
 
-    const rows = getDb()
+    const rows = (getDb()
       .prepare(
         `SELECT kind, ref_id AS id, title,
                 snippet(search_index, -1, '[[', ']]', '...', 10) AS snippet,
@@ -47,11 +47,11 @@ router.get(
          ORDER BY score
          LIMIT 200`,
       )
-      .all(q, ...types) as unknown as Hit[];
+      .all(q, ...types) ?? []) as unknown as Hit[];
 
     // A sale can match on several rows (reference and items); keep its best.
     const best = new Map<string, Hit>();
-    for (const r of rows) {
+    for (const r of (rows ?? [])) {
       const key = `${r.kind}:${r.id}`;
       if (!best.has(key)) best.set(key, r);
     }
@@ -60,18 +60,18 @@ router.get(
     // Sale item rows have no title; show the sale reference instead.
     const missing = hits.filter((h) => h.kind === 'sale' && !h.title).map((h) => h.id);
     if (missing.length) {
-      const refs = getDb()
+      const refs = (getDb()
         .prepare(
           `SELECT id, reference FROM transactions WHERE id IN (${missing.map(() => '?').join(',')})`,
         )
-        .all(...missing) as { id: string; reference: string }[];
-      const byId = new Map(refs.map((r) => [r.id, r.reference]));
+        .all(...missing) ?? []) as { id: string; reference: string }[];
+      const byId = new Map((refs ?? []).map((r) => [r.id, r.reference]));
       for (const h of hits) if (h.kind === 'sale' && !h.title) h.title = byId.get(h.id) ?? '';
     }
 
     sendSuccess(
       res,
-      hits.map(({ kind, id, title, snippet }) => ({ kind, id, title, snippet })),
+      (hits ?? []).map(({ kind, id, title, snippet }) => ({ kind, id, title, snippet })),
     );
   }),
 );

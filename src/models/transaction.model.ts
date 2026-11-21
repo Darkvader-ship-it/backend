@@ -147,6 +147,9 @@ export const TransactionModel = {
     const id = withTransaction((db) => {
       const merged = new Map<string, number>();
       for (const line of input.items) {
+        if (!line.quantity || line.quantity <= 0 || !Number.isInteger(line.quantity)) {
+          throw new AppError('All line item quantities must be positive integers', 400);
+        }
         merged.set(line.productId, (merged.get(line.productId) ?? 0) + line.quantity);
       }
 
@@ -286,10 +289,10 @@ export const TransactionModel = {
         n: number;
       }
     ).n;
-    const rows = db
+    const rows = (db
       .prepare(`${SELECT} ${where} ORDER BY t.created_at DESC, t.reference DESC LIMIT ? OFFSET ?`)
-      .all(...params, page.limit, page.offset) as unknown as TransactionRow[];
-    return { items: rows.map(toTransaction), total };
+      .all(...params, page.limit, page.offset) ?? []) as unknown as TransactionRow[];
+    return { items: (rows ?? []).map(toTransaction), total: total ?? 0 };
   },
 
   markCompleted(id: string): void {
