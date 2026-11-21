@@ -1,5 +1,6 @@
 import * as email from '@/services/email.service';
 import { receiptEmail } from '@/services/receipt.service';
+import { config } from '@/config/config';
 import { setupQueues } from '@/utils/queue';
 import { api, bearer, createProduct, createSale, signUp, useDatabase } from './helpers';
 
@@ -84,6 +85,34 @@ describe('receipt content', () => {
     expect(e.text).toContain('2 x <b>Flat</b> White  $8.40');
     expect(e.text).toContain('STELLAR  $8.40  (tx abc)');
     expect(e.html).toContain('&lt;b&gt;Flat&lt;/b&gt;');
+  });
+
+  it('encodes special merchant characters in HTML while preserving the plain-text name', () => {
+    const storeConfig = config.store as { name: string };
+    const originalName = storeConfig.name;
+    storeConfig.name = 'Café & Sons 🚀';
+
+    try {
+      const e = receiptEmail(
+        'a@b.co',
+        {
+          reference: 'S-000010',
+          createdAt: '2026-10-24 10:00:00',
+          subtotalCents: 100,
+          discountCents: 0,
+          taxCents: 0,
+          totalCents: 100,
+        } as never,
+        [],
+        [],
+      );
+
+      expect(e.text).toContain('Café & Sons 🚀');
+      expect(e.subject).toContain('Café & Sons 🚀');
+      expect(e.html).toContain('Caf&#233; &amp; Sons &#128640;');
+    } finally {
+      storeConfig.name = originalName;
+    }
   });
 });
 

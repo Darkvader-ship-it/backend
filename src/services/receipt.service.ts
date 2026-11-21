@@ -9,10 +9,12 @@ const money = (cents: number) =>
   );
 
 const escape = (s: string) =>
-  s.replace(
-    /[&<>"']/g,
-    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
-  );
+  s
+    .replace(
+      /[&<>"']/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!,
+    )
+    .replace(/[^\x00-\x7f]/gu, (c) => `&#${c.codePointAt(0)!};`);
 
 /** Plain-text and HTML receipt for a sale, mirroring the printed one. */
 export function receiptEmail(
