@@ -56,7 +56,7 @@ router.post(
     if (idempotencyKey) {
       idempotencyStore.set(idempotencyKey, { result, timestamp: Date.now() });
     }
-    sendSuccess(res, result, 201);
+    return sendSuccess(res, result, 201);
   }),
 );
 

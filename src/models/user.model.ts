@@ -10,6 +10,7 @@ interface UserRow {
   email: string;
   password_hash: string;
   role: Role;
+  active: number;
   created_at: string;
 }
 
@@ -19,6 +20,7 @@ export interface User {
   email: string;
   passwordHash: string;
   role: Role;
+  active: number;
   createdAt: string;
 }
 
@@ -30,6 +32,7 @@ const toUser = (r: UserRow): User => ({
   email: r.email,
   passwordHash: r.password_hash,
   role: r.role,
+  active: r.active,
   createdAt: r.created_at,
 });
 
@@ -106,6 +109,8 @@ export const UserModel = {
     getDb()
       .prepare("UPDATE users SET name = '[deleted user]', email = ?, password_hash = ? WHERE id = ?")
       .run(placeholderEmail, unusableHash, id);
+  },
+
   /** Soft-deactivate: sets active = 0, preventing login (#148). */
   deactivate(id: string): void {
     getDb().prepare('UPDATE users SET active = 0 WHERE id = ?').run(id);
