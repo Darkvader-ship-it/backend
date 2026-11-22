@@ -16,11 +16,11 @@ process.env.TAX_RATE_BPS = '0';
 // connectDatabase(), which re-runs all migrations from scratch (#196).
 import { connectDatabase, closeDatabase } from '@/utils/database';
 
-beforeEach(async () => {
+beforeAll(async () => {
   closeDatabase();
   await connectDatabase(':memory:');
 });
 
-afterEach(() => {
+afterAll(() => {
   closeDatabase();
 });

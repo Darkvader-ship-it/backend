@@ -7,7 +7,7 @@
  * amount (and, for QR checkouts, carries the checkout's unique memo).
  */
 import { config } from '@/config/config';
-import { AppError, badRequest, notFound } from '@/middleware/error.middleware';
+import { AppError, badRequest, conflict, notFound } from '@/middleware/error.middleware';
 import { PaymentModel, type Payment } from '@/models/payment.model';
 import { PaymentRequestModel, type PaymentRequest } from '@/models/paymentRequest.model';
 import { TransactionModel, type Transaction } from '@/models/transaction.model';
@@ -26,6 +26,7 @@ import { getDb, withTransaction } from '@/utils/database';
 import { randomToken } from '@/utils/helpers';
 import { logger } from '@/utils/logger';
 import { centsToAssetAmount } from '@/utils/money';
+import { validateStellarMemo } from '@/utils/stellarMemo';
 import { stellarTransactions } from '@/utils/metrics';
 
 /** Where a Stellar payment came from, for the stellar_transactions_total metric. */
@@ -154,7 +155,10 @@ export async function recordStellarPayment(input: {
  * Opens a QR checkout for the sale's balance. Calling it again for the same
  * sale returns the open request instead of creating a second one.
  */
-export function createPaymentRequest(transactionId: string): PaymentRequest {
+export function createPaymentRequest(
+  transactionId: string,
+  requestedMemo?: string,
+): PaymentRequest {
   const sale = pendingSale(transactionId);
   if (sale.balanceCents <= 0) throw badRequest('Nothing left to pay on this sale');
   const open = PaymentRequestModel.findOpenForTransaction(sale.id);
@@ -163,8 +167,16 @@ export function createPaymentRequest(transactionId: string): PaymentRequest {
   const destination = merchantAccount();
   const asset = configuredAsset();
   const amount = centsToAssetAmount(sale.balanceCents, config.stellar.assetRate);
-  // Text memos are capped at 28 bytes; "SP" + 10 chars is unique enough and easy to read.
-  const memo = `SP${randomToken(10)}`;
+  // Validate merchant-supplied memos at the boundary: the wallet builds the
+  // transaction envelope from the URI below and Stellar rejects an oversized
+  // MEMO_TEXT with a cryptic error.
+  let memo = `SP${randomToken(10)}`; // 12 bytes, well within the 28-byte limit.
+  if (requestedMemo) {
+    memo = validateStellarMemo(requestedMemo, 'Stellar text memo');
+    if (PaymentRequestModel.findByMemo(memo)) {
+      throw conflict('This memo is already used by another payment request');
+    }
+  }
   const expiresAt = new Date(Date.now() + config.stellar.paymentTtlMinutes * 60_000).toISOString();
 
   return PaymentRequestModel.create({
