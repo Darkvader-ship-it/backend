@@ -62,9 +62,7 @@ router.post(
 router.delete(
   '/account/link',
   asyncHandler(async (req, res) => {
-    const result = getDb()
-      .prepare('DELETE FROM user_stellar WHERE user_id = ?')
-      .run(req.user!.sub);
+    const result = getDb().prepare('DELETE FROM user_stellar WHERE user_id = ?').run(req.user!.sub);
     if (result.changes === 0) throw new AppError('No Stellar account linked', 404);
     sendSuccess(res, { linked: false });
   }),

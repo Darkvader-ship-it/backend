@@ -4,12 +4,17 @@ import { newId } from '@/utils/helpers';
 export const ROLES = ['admin', 'manager', 'cashier'] as const;
 export type Role = (typeof ROLES)[number];
 
+/** Compliance gate for money-out (withdrawal) endpoints. */
+export const KYC_STATUSES = ['pending', 'approved', 'rejected'] as const;
+export type KycStatus = (typeof KYC_STATUSES)[number];
+
 interface UserRow {
   id: string;
   name: string;
   email: string;
   password_hash: string;
   role: Role;
+  kyc_status: KycStatus;
   active: number;
   created_at: string;
 }
@@ -21,6 +26,8 @@ export interface User {
   passwordHash: string;
   role: Role;
   active: number;
+  kycStatus: KycStatus;
+  active: boolean;
   createdAt: string;
 }
 
@@ -33,6 +40,8 @@ const toUser = (r: UserRow): User => ({
   passwordHash: r.password_hash,
   role: r.role,
   active: r.active,
+  kycStatus: r.kyc_status ?? 'pending',
+  active: r.active !== 0,
   createdAt: r.created_at,
 });
 
@@ -89,6 +98,17 @@ export const UserModel = {
     getDb().prepare('UPDATE users SET role = ? WHERE id = ?').run(role, id);
   },
 
+  /** Compliance decision recorded by an admin. Read fresh on every withdrawal request. */
+  updateKycStatus(id: string, status: KycStatus): void {
+    getDb().prepare('UPDATE users SET kyc_status = ? WHERE id = ?').run(status, id);
+  },
+
+  kycStatus(id: string): KycStatus | undefined {
+    const row = getDb().prepare('SELECT kyc_status FROM users WHERE id = ?').get(id) as
+      { kyc_status: KycStatus } | undefined;
+    return row?.kyc_status;
+  },
+
   updateProfile(id: string, fields: { name?: string; passwordHash?: string }): void {
     if (fields.name !== undefined) {
       getDb().prepare('UPDATE users SET name = ? WHERE id = ?').run(fields.name, id);
@@ -107,7 +127,9 @@ export const UserModel = {
    */
   anonymise(id: string, placeholderEmail: string, unusableHash: string): void {
     getDb()
-      .prepare("UPDATE users SET name = '[deleted user]', email = ?, password_hash = ? WHERE id = ?")
+      .prepare(
+        "UPDATE users SET name = '[deleted user]', email = ?, password_hash = ? WHERE id = ?",
+      )
       .run(placeholderEmail, unusableHash, id);
   },
 

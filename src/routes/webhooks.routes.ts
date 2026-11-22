@@ -32,12 +32,18 @@ export async function dispatchWebhookWithRetry(
     });
     if (!res.ok && attempt <= 3) {
       const delay = WEBHOOK_RETRY_INTERVALS[attempt - 1] ?? 60_000;
-      setTimeout(() => void dispatchWebhookWithRetry(url, event, payload, attempt + 1), delay).unref();
+      setTimeout(
+        () => void dispatchWebhookWithRetry(url, event, payload, attempt + 1),
+        delay,
+      ).unref();
     }
   } catch {
     if (attempt <= 3) {
       const delay = WEBHOOK_RETRY_INTERVALS[attempt - 1] ?? 60_000;
-      setTimeout(() => void dispatchWebhookWithRetry(url, event, payload, attempt + 1), delay).unref();
+      setTimeout(
+        () => void dispatchWebhookWithRetry(url, event, payload, attempt + 1),
+        delay,
+      ).unref();
     }
   }
 }
@@ -66,6 +72,7 @@ router.get(
     const page = parsePagination(req.query, 200);
     const clauses: string[] = [];
     const params: (string | number)[] = [];
+    const params: string[] = [];
 
     if (req.query.event) {
       clauses.push('event = ?');
