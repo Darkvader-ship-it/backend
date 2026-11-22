@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
@@ -15,22 +16,44 @@ import merchantRoutes from '@/routes/merchant.routes';
 import auditRoutes from '@/routes/audit.routes';
 import authRoutes from '@/routes/auth.routes';
 import customerRoutes from '@/routes/customers.routes';
+import disputeRoutes from '@/routes/disputes.routes';
 import paymentRoutes from '@/routes/payments.routes';
 import productRoutes from '@/routes/products.routes';
 import queueRoutes from '@/routes/queues.routes';
 import searchRoutes from '@/routes/search.routes';
+import webhookRoutes from '@/routes/webhooks.routes';
+import stellarRoutes from '@/routes/stellar.routes';
 import storeRoutes from '@/routes/store.routes';
 import transactionRoutes from '@/routes/transactions.routes';
+import transactionStreamRoutes from '@/routes/transactionStream.routes';
 import userRoutes from '@/routes/users.routes';
+import docsRoutes from '@/routes/docs.routes';
+import { checkHealth } from '@/services/health.service';
 import { connections } from '@/services/realtime';
-import { isDatabaseHealthy } from '@/utils/database';
+import { asyncHandler, sendError } from '@/utils/helpers';
 import { logger } from '@/utils/logger';
+import {
+  METRICS_CONTENT_TYPE,
+  metricsAuthorized,
+  metricsMiddleware,
+  renderMetrics,
+} from '@/utils/metrics';
 
 export function createApp(): express.Express {
   const app = express();
 
   app.set('trust proxy', 1);
   app.disable('x-powered-by');
+
+  // Request tracing with correlation IDs (#128)
+  app.use((req, res, next) => {
+    const reqId = (req.headers['x-request-id'] as string) || randomUUID();
+    req.headers['x-request-id'] = reqId;
+    res.setHeader('X-Request-ID', reqId);
+    (req as any).id = reqId;
+    next();
+  });
+
   app.use(helmet());
   app.use(
     cors({
@@ -40,6 +63,7 @@ export function createApp(): express.Express {
       allowedHeaders: ['Content-Type', 'Authorization'],
     }),
   );
+  app.use(metricsMiddleware);
   app.use(
     '/api',
     roleRateLimit(
@@ -89,12 +113,44 @@ export function createApp(): express.Express {
     res.status(database === 'up' ? 200 : 503).json({
       status: database === 'up' ? 'OK' : 'DEGRADED',
       database,
+  // Liveness and readiness in one probe: 200 when the database and Horizon both
+  // answer, 503 otherwise. /healthz is the Kubernetes-style alias of /health.
+  // Probe failure details are logged, never returned.
+  const health = asyncHandler(async (_req, res) => {
+    const report = await checkHealth();
+    res.status(report.healthy ? 200 : 503).json({
+      status: report.healthy ? 'OK' : 'DEGRADED',
+      database: report.checks.database,
+      horizon: report.checks.horizon,
+      checks: report.checks,
       timestamp: new Date().toISOString(),
       version: process.env.npm_package_version ?? '0.2.0',
       environment: config.env,
       stellarNetwork: config.stellar.network,
       sockets: connections.count(),
     });
+  });
+  app.get(['/health', '/healthz'], health);
+
+  // Prometheus scrape endpoint. Open unless METRICS_TOKEN is set.
+  app.get(
+    '/metrics',
+    asyncHandler(async (req, res) => {
+      if (!metricsAuthorized(req.headers.authorization)) {
+        sendError(res, 'Metrics require a bearer token', 401);
+        return;
+      }
+      res.set('Content-Type', METRICS_CONTENT_TYPE);
+      res.send(await renderMetrics());
+    }),
+  );
+
+  // Version unversioned /api/* routes as alias to /api/v1/* (#129)
+  app.use('/api', (req, res, next) => {
+    if (!req.url.startsWith('/v1')) {
+      req.url = `/v1${req.url}`;
+    }
+    next();
   });
 
   app.use('/api/v1', apiVersion('1'));
@@ -107,9 +163,14 @@ export function createApp(): express.Express {
   app.use('/api/v1/payments', paymentRoutes);
   app.use('/api/v1/analytics', analyticsRoutes);
   app.use('/api/v1/search', searchRoutes);
+  app.use('/api/v1/webhooks', webhookRoutes);
   app.use('/api/v1/audit', auditRoutes);
+  app.use('/api/v1/disputes', disputeRoutes);
+  app.use('/api/v1/stellar', stellarRoutes);
+  app.use('/api/v1/transactions', transactionStreamRoutes);
   app.use('/api/v1/merchant', merchantRoutes);
   app.use('/api/v1/queues', queueRoutes);
+  app.use('/api/docs', docsRoutes);
   app.use(unsupportedApiVersion(['1']));
 
   app.use(notFoundHandler);

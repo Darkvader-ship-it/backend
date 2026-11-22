@@ -73,6 +73,11 @@ export const TwoFactorModel = {
     getDb().prepare('DELETE FROM user_totp WHERE user_id = ?').run(userId);
   },
 
+  /** Deletes all 2FA state for a user, including a pending enrolment. True if a row existed. */
+  purge(userId: string): boolean {
+    return getDb().prepare('DELETE FROM user_totp WHERE user_id = ?').run(userId).changes === 1;
+  },
+
   /** Records a used time step; false if it (or a later one) was already used. */
   consumeStep(userId: string, step: number): boolean {
     return (

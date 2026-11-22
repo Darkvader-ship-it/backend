@@ -1,5 +1,6 @@
 import { Keypair, StrKey } from '@stellar/stellar-sdk';
 import { config } from '@/config/config';
+import { AppError } from '@/middleware/error.middleware';
 import * as horizon from '@/services/horizon';
 import { toStroops } from '@/utils/money';
 
@@ -27,8 +28,23 @@ export function generateWallet(): { publicKey: string; secret: string } {
 export const isValidPublicKey = (key: string): boolean => StrKey.isValidEd25519PublicKey(key);
 
 export async function getAccountBalances(publicKey: string): Promise<horizon.Balance[]> {
-  if (!isValidPublicKey(publicKey)) throw new Error('Invalid Stellar public key');
-  return horizon.loadBalances(publicKey);
+  if (!isValidPublicKey(publicKey)) throw new AppError('Invalid Stellar public key', 400);
+  try {
+    return await horizon.loadBalances(publicKey);
+  } catch (err: any) {
+    if (
+      err?.name === 'NotFoundError' ||
+      err?.response?.status === 404 ||
+      err?.message?.includes('not found') ||
+      err?.message?.includes('Account not found')
+    ) {
+      throw new AppError(
+        'Destination Stellar account not found. Please activate it by funding with the minimum reserve (1 XLM).',
+        400,
+      );
+    }
+    throw err;
+  }
 }
 
 /**

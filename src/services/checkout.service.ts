@@ -26,6 +26,10 @@ import { getDb, withTransaction } from '@/utils/database';
 import { randomToken } from '@/utils/helpers';
 import { logger } from '@/utils/logger';
 import { centsToAssetAmount } from '@/utils/money';
+import { stellarTransactions } from '@/utils/metrics';
+
+/** Where a Stellar payment came from, for the stellar_transactions_total metric. */
+type StellarSource = 'checkout_request' | 'manual_hash' | 'watcher';
 
 function pendingSale(transactionId: string): Transaction {
   const sale = TransactionModel.findById(transactionId);
@@ -132,6 +136,7 @@ export async function recordStellarPayment(input: {
       amountCents: sale.balanceCents,
       status: 'failed',
     });
+    stellarTransactions.inc({ source: 'manual_hash', outcome: 'rejected' });
     throw new AppError(`Stellar payment could not be verified: ${result.reason}`, 402);
   }
   const payment = PaymentModel.create({
@@ -141,6 +146,7 @@ export async function recordStellarPayment(input: {
     status: 'completed',
     stellarTxHash: input.stellarTxHash,
   });
+  stellarTransactions.inc({ source: 'manual_hash', outcome: 'settled' });
   return { payment, transaction: completeIfPaid(sale.id) };
 }
 
@@ -180,7 +186,12 @@ export function createPaymentRequest(transactionId: string): PaymentRequest {
 }
 
 /** Marks a request paid and completes its sale. Idempotent per request. */
-function settleRequest(request: PaymentRequest, txHash: string, payer: string): Transaction {
+function settleRequest(
+  request: PaymentRequest,
+  txHash: string,
+  payer: string,
+  source: StellarSource,
+): Transaction {
   const settled = withTransaction(() => {
     if (!PaymentRequestModel.markPaid(request.id, txHash, payer)) return false;
     const sale = TransactionModel.findById(request.transactionId)!;
@@ -195,6 +206,7 @@ function settleRequest(request: PaymentRequest, txHash: string, payer: string): 
   });
   const sale = completeIfPaid(request.transactionId);
   if (settled) {
+    stellarTransactions.inc({ source, outcome: 'settled' });
     emit('payment:confirmed', {
       request: PaymentRequestModel.findById(request.id),
       transaction: sale,
@@ -222,10 +234,12 @@ export async function verifyPaymentRequest(
     amount: request.amount,
     memo: request.memo,
   });
-  if (!result.verified)
+  if (!result.verified) {
+    stellarTransactions.inc({ source: 'checkout_request', outcome: 'rejected' });
     throw new AppError(`Stellar payment could not be verified: ${result.reason}`, 402);
+  }
 
-  const transaction = settleRequest(request, txHash, result.from ?? '');
+  const transaction = settleRequest(request, txHash, result.from ?? '', 'checkout_request');
   return { request: PaymentRequestModel.findById(requestId)!, transaction };
 }
 
@@ -247,12 +261,13 @@ export async function handleIncomingPayment(p: IncomingPayment): Promise<boolean
     amount: request.amount,
   };
   if (!paymentSatisfies(p, expected)) {
+    stellarTransactions.inc({ source: 'watcher', outcome: 'rejected' });
     logger.warn(
       `Payment ${p.txHash} carries memo ${tx.memo} but pays ${p.amount} ${p.assetCode}; expected ${request.amount} ${request.assetCode}`,
     );
     return false;
   }
-  settleRequest(request, p.txHash, p.from);
+  settleRequest(request, p.txHash, p.from, 'watcher');
   return true;
 }
 

@@ -7,6 +7,14 @@ import { Horizon, NotFoundError } from '@stellar/stellar-sdk';
 import { config } from '@/config/config';
 import { getRedis } from '@/utils/redis';
 
+export const STELLAR_REQUEST_TIMEOUT_MS = 30_000;
+
+Horizon.AxiosClient.defaults.timeout = STELLAR_REQUEST_TIMEOUT_MS;
+Horizon.AxiosClient.interceptors.request.use((request) => {
+  request.timeout = STELLAR_REQUEST_TIMEOUT_MS;
+  return request;
+});
+
 /** TTL for cached account balance data (#154). Short so stale balances are
  *  not served for long; long enough to absorb repeated calls within one
  *  checkout flow without hitting the Horizon rate limit. */
@@ -194,4 +202,19 @@ export async function loadBalances(account: string): Promise<Balance[]> {
           : { assetCode: b.asset_type, assetIssuer: null, balance: b.balance },
     );
   });
+}
+
+/**
+ * Cheap reachability check for /health: one GET on the Horizon root, aborted
+ * after `timeoutMs`. Resolves when Horizon answers 2xx; throws otherwise. The
+ * error is for the server log only and must never be echoed to clients.
+ */
+export async function probeHorizon(timeoutMs: number): Promise<void> {
+  const res = await fetch(config.stellar.horizonUrl, {
+    method: 'GET',
+    headers: { Accept: 'application/json' },
+    signal: AbortSignal.timeout(timeoutMs),
+  });
+  await res.body?.cancel();
+  if (!res.ok) throw new Error(`Horizon responded with HTTP ${res.status}`);
 }

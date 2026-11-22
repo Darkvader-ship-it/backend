@@ -10,8 +10,29 @@ export const asyncHandler =
     fn(req, res, next).catch(next);
   };
 
+function formatDatesToIso(obj: unknown): unknown {
+  if (obj === null || obj === undefined) return obj;
+  if (obj instanceof Date) return obj.toISOString();
+  if (Array.isArray(obj)) return obj.map(formatDatesToIso);
+  if (typeof obj === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (
+        (k.endsWith('At') || k.endsWith('Date') || k === 'created_at' || k === 'updated_at' || k === 'completed_at') &&
+        typeof v === 'number'
+      ) {
+        out[k] = new Date(v > 1_000_000_000_000 ? v : v * 1000).toISOString();
+      } else {
+        out[k] = formatDatesToIso(v);
+      }
+    }
+    return out;
+  }
+  return obj;
+}
+
 export function sendSuccess<T>(res: Response, data: T, statusCode = 200): Response {
-  return res.status(statusCode).json({ success: true, data });
+  return res.status(statusCode).json({ success: true, data: formatDatesToIso(data) });
 }
 
 export function sendError(res: Response, message: string, statusCode = 400): Response {
@@ -41,6 +62,42 @@ export function paginatedResponse<T>(
     success: true,
     data: items,
     pagination: { page, limit, total, pages: Math.max(1, Math.ceil(total / limit)) },
+  });
+}
+
+/** Cursor-based pagination using created_at + id (#130). */
+export function encodeCursor(item: { createdAt?: string; created_at?: string; id: string }): string {
+  const ts = item.createdAt ?? item.created_at ?? '';
+  return Buffer.from(`${ts}:${item.id}`).toString('base64');
+}
+
+export function decodeCursor(cursorStr?: string): { createdAt: string; id: string } | undefined {
+  if (!cursorStr) return undefined;
+  try {
+    const [createdAt, id] = Buffer.from(cursorStr, 'base64').toString('utf8').split(':');
+    if (!createdAt || !id) return undefined;
+    return { createdAt, id };
+  } catch {
+    return undefined;
+  }
+}
+
+export function cursorPaginatedResponse<T extends { id: string; createdAt?: string; created_at?: string }>(
+  res: Response,
+  items: T[],
+  limit: number,
+): Response {
+  const hasNext = items.length > limit;
+  const sliced = hasNext ? items.slice(0, limit) : items;
+  const nextCursor = hasNext && sliced.length > 0 ? encodeCursor(sliced[sliced.length - 1]) : null;
+  return res.json({
+    success: true,
+    data: sliced,
+    pagination: {
+      limit,
+      nextCursor,
+      hasMore: hasNext,
+    },
   });
 }
 

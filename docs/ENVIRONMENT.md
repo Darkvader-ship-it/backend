@@ -54,7 +54,8 @@ whole numbers, or the server refuses to start.
 
 | Variable | Default | Description |
 |---|---|---|
-| `STELLAR_NETWORK` | `testnet` | `testnet` or `mainnet`. Any other value is treated as `testnet`. |
+| `STELLAR_NETWORK` | `testnet` | `testnet` or `mainnet`. Any other value stops start-up with an error. |
+| `STELLAR_NETWORK_PASSPHRASE` | Passphrase for `STELLAR_NETWORK` | Must match `STELLAR_NETWORK`: `Test SDF Network ; September 2015` on testnet, `Public Global Stellar Network ; September 2015` on mainnet. Start-up stops on a mismatch. |
 | `STELLAR_HORIZON_URL` | `https://horizon-testnet.stellar.org` on testnet, `https://horizon.stellar.org` on mainnet | Horizon API the backend reads from. Keep it on the same network as `STELLAR_NETWORK`. |
 | `STELLAR_MERCHANT_PUBLIC_KEY` | empty | Public key (`G...`) that receives customer payments. Stellar checkout is disabled while it is empty. Never put a secret key (`S...`) here. The backend only watches this account and never signs for it. |
 | `STELLAR_ASSET_CODE` | `XLM` | Asset customers pay in, for example `USDC`. |
@@ -65,6 +66,14 @@ whole numbers, or the server refuses to start.
 | `STELLAR_WATCHER_INTERVAL_MS` | `5000` | Milliseconds between watcher polls. |
 | `STELLAR_PAYMENT_PROCESSOR_ID` | empty | Optional. Contract ID of the payment processor, from the contracts repo's `deployments/<network>.json`. Exposed in `GET /api/v1/store`. |
 | `STELLAR_MERCHANT_REGISTRY_ID` | empty | Optional. Contract ID of the merchant registry, from the same file. Exposed in `GET /api/v1/store`. |
+
+## Operations
+
+| Variable | Default | Description |
+|---|---|---|
+| `HEALTH_CHECK_TIMEOUT_MS` | `1000` | Longest wait for each dependency probe behind `GET /health` and `GET /healthz` (database, Horizon). A probe that exceeds it counts as down. |
+| `METRICS_TOKEN` | empty | Optional. When set, `GET /metrics` requires `Authorization: Bearer <token>`. Empty leaves the endpoint open, so keep it on a private network. |
+| `SHUTDOWN_TIMEOUT_MS` | `10000` | On `SIGTERM` or `SIGINT`: milliseconds in-flight requests may run before their sockets are cut. The job queue then gets the same budget to flush. Must be greater than 0. |
 
 ## Scripts only
 
