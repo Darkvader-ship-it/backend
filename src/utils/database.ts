@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin', 'manager', 'cashier')),
   active INTEGER NOT NULL DEFAULT 1,
+  -- Compliance gate: withdrawals are blocked unless this is 'approved'.
+  kyc_status TEXT NOT NULL DEFAULT 'pending' CHECK (kyc_status IN ('pending', 'approved', 'rejected')),
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -193,19 +195,52 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
+
+-- Idempotency keys for mutating endpoints. The response is stored so a retry
+-- after a client timeout replays the original result instead of creating a
+-- second order. Keys are scoped per user + route (scope) and expire after 24h.
+CREATE TABLE IF NOT EXISTS idempotency_keys (
+  scope TEXT NOT NULL,
+  key TEXT NOT NULL,
+  request_hash TEXT NOT NULL,
+  status INTEGER NOT NULL,
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  expires_at TEXT NOT NULL,
+  PRIMARY KEY (scope, key)
+);
+CREATE INDEX IF NOT EXISTS idx_idempotency_expires ON idempotency_keys(expires_at);
+
+-- Stellar withdrawals (money out). Gated by the KYC middleware in app.ts.
+CREATE TABLE IF NOT EXISTS withdrawals (
+  id TEXT PRIMARY KEY,
+  user_id TEXT NOT NULL REFERENCES users(id),
+  destination TEXT NOT NULL,
+  asset_code TEXT NOT NULL,
+  asset_issuer TEXT,
+  amount TEXT NOT NULL,
+  memo TEXT NOT NULL DEFAULT '',
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'completed', 'failed', 'cancelled')),
+  tx_hash TEXT UNIQUE,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_withdrawals_user ON withdrawals(user_id, created_at);
 `;
 
 let sessionCleanupTimer: NodeJS.Timeout | null = null;
 
 export function startSessionCleanup(): void {
   // Clean up expired sessions every 15 minutes (#126)
-  sessionCleanupTimer = setInterval(() => {
-    try {
-      getDb().prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
-    } catch (err) {
-      logger.error('Session cleanup failed', err);
-    }
-  }, 15 * 60 * 1000);
+  sessionCleanupTimer = setInterval(
+    () => {
+      try {
+        getDb().prepare("DELETE FROM sessions WHERE expires_at < datetime('now')").run();
+      } catch (err) {
+        logger.error('Session cleanup failed', err);
+      }
+    },
+    15 * 60 * 1000,
+  );
   sessionCleanupTimer.unref();
 }
 
@@ -224,6 +259,8 @@ export async function connectDatabase(path: string = config.database.path): Prom
     db.exec('PRAGMA synchronous = NORMAL;');
   }
   db.exec(SCHEMA);
+  // Older databases predate the KYC gate; add the column idempotently (#compliance).
+  addColumnWithDefault('users', 'kyc_status', 'TEXT NOT NULL', "'pending'");
   db.exec(SEARCH_SCHEMA);
   backfillSearchIndex(db);
   logger.debug(`Database ready at ${path}`);
@@ -296,9 +333,10 @@ export function addColumnWithDefault(
   defaultValue?: string,
 ): void {
   const defaultClause = defaultValue !== undefined ? `DEFAULT ${defaultValue}` : "DEFAULT ''";
-  const def = typeDef.toUpperCase().includes('NOT NULL') && !typeDef.toUpperCase().includes('DEFAULT')
-    ? `${typeDef} ${defaultClause}`
-    : typeDef;
+  const def =
+    typeDef.toUpperCase().includes('NOT NULL') && !typeDef.toUpperCase().includes('DEFAULT')
+      ? `${typeDef} ${defaultClause}`
+      : typeDef;
   try {
     getDb().exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${def}`);
   } catch (err: any) {

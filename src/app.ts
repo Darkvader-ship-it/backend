@@ -13,6 +13,8 @@ import { notFoundHandler } from '@/middleware/notFound.middleware';
 import { DEFAULT_ROLE_LIMITS, roleRateLimit } from '@/middleware/rateLimit.middleware';
 import analyticsRoutes from '@/routes/analytics.routes';
 import merchantRoutes from '@/routes/merchant.routes';
+import orderRoutes from '@/routes/orders.routes';
+import withdrawalRoutes from '@/routes/withdrawals.routes';
 import auditRoutes from '@/routes/audit.routes';
 import authRoutes from '@/routes/auth.routes';
 import customerRoutes from '@/routes/customers.routes';
@@ -60,7 +62,7 @@ export function createApp(): express.Express {
       origin: config.client.url,
       credentials: true,
       methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Request-ID'],
     }),
   );
   app.use(metricsMiddleware);
@@ -146,7 +148,7 @@ export function createApp(): express.Express {
   );
 
   // Version unversioned /api/* routes as alias to /api/v1/* (#129)
-  app.use('/api', (req, res, next) => {
+  app.use('/api', (req, _res, next) => {
     if (!req.url.startsWith('/v1')) {
       req.url = `/v1${req.url}`;
     }
@@ -169,6 +171,8 @@ export function createApp(): express.Express {
   app.use('/api/v1/stellar', stellarRoutes);
   app.use('/api/v1/transactions', transactionStreamRoutes);
   app.use('/api/v1/merchant', merchantRoutes);
+  app.use('/api/v1/orders', orderRoutes);
+  app.use('/api/v1/withdrawals', withdrawalRoutes);
   app.use('/api/v1/queues', queueRoutes);
   app.use('/api/docs', docsRoutes);
   app.use(unsupportedApiVersion(['1']));

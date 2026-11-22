@@ -17,7 +17,12 @@ const publicUser = (user: User) => ({
 
 const session = (user: User) => ({
   user: publicUser(user),
-  token: signToken({ sub: user.id, email: user.email, role: user.role }),
+  token: signToken({
+    sub: user.id,
+    email: user.email,
+    role: user.role,
+    kycStatus: user.kycStatus,
+  }),
 });
 
 /**
@@ -135,8 +140,10 @@ export async function updateStaffRole(req: Request, res: Response): Promise<void
 export async function deactivateStaff(req: Request, res: Response): Promise<void> {
   const target = UserModel.findById(req.params.id);
   if (!target) throw notFound('User');
-  if (target.id === req.user!.sub) throw new AppError('You cannot deactivate your own account', 400);
-  if (target.role === 'admin') throw new AppError('Admin accounts cannot be deactivated this way', 403);
+  if (target.id === req.user!.sub)
+    throw new AppError('You cannot deactivate your own account', 400);
+  if (target.role === 'admin')
+    throw new AppError('Admin accounts cannot be deactivated this way', 403);
   UserModel.deactivate(target.id);
   sendSuccess(res, { id: target.id, deactivated: true });
 }
